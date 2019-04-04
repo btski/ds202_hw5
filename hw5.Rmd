@@ -1,0 +1,98 @@
+---
+title: 'Homework #5'
+author: "Blake Inderski"
+date: "4/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library("dplyr")
+library("tidyr")
+library("tidyverse")
+library("ggplot2")
+```
+
+## Liquor Sales in Iowa
+
+This dataset https://data.iowa.gov/Economy/Iowa-Liquor-Sales/m3tr-qhgy contains the spirits purchase information of Iowa Class “E” liquor licensees by product and date of purchase from January 1, 2012 to current. The dataset can be used to analyze total spirits sales in Iowa of individual products at the store level.
+
+**Submission instructions**: Create a folder named `ds202_hw5`, and name the RMarkDown file including your solutions `hw5.Rmd` under this folder. For the submission, create a GitHub repository named `ds202_hw5` under your GitHub account, and push both `hw4.Rmd` and the knitted `hw5.html` before the deadline. I will assume you use the same GitHub username as for your HW4 submission. The latest version of your homework appearing on GitHub before the deadline is graded. *It is crucial to follow the exact folder structure and file names*, so that your homework can be reproduced and graded by an automated script. This homework is **due on April 11** before class.
+
+1. The code below downloads the data for Ames only and saves a local copy to your machine. The first time you run this code, make sure you have a good internet connection and enough space on your machine (~50 MB). If the local copy exists, re-knitting the file will load the (binary) file from disk and be much faster. 
+```{r, cache=TRUE}
+if (file.exists("alcohol.rds")) {
+  data <- readRDS("alcohol.rds")
+} else {
+  url <- "https://xdaiisu.github.io/ds202materials/data/ames.csv"
+  data <- readr::read_csv(url)
+  saveRDS(data, file="alcohol.rds")
+} 
+```
+2. Data cleaning: 
+  - extract geographic latitude and longitude from the variable `Store Location`
+  - check variable types. Pick five variables that need to be converted to a different type and fix those. 
+  - extract year, month and day from the variable `Date`
+```{r}
+#do not directly change original columns to allow rewrite without breaking
+data <- data %>% mutate(Latitude = str_extract(`Store Location`, "(?<=\\()([^,]+)")) %>% mutate(Longitude = str_extract(`Store Location`, "(?<=, )([^\\)]+)"))
+
+data[, "Store Name"] <- lapply(data[, "Store Name"], as.factor)
+data[, "Category Name"] <- lapply(data[, "Category Name"], as.factor)
+data[, "Vendor Number"] <- lapply(data[, "Vendor Number"], as.numeric)
+data[, "Latitude"] <- lapply(data[, "Latitude"], as.numeric)
+data[, "Longitude"] <- lapply(data[, "Longitude"], as.numeric)
+
+data <- data %>% mutate(`Copy Date` = Date) %>% separate(`Copy Date`, into=c("Month", "Day", "Year"), sep="/")
+data[, "Month"] <- lapply(data[, "Month"], as.numeric)
+data[, "Day"] <- lapply(data[, "Day"], as.numeric)
+data[, "Year"] <- lapply(data[, "Year"], as.numeric)
+```
+3. First overview:
+  - Plot a scatterplot of lat and long of store locations. 
+  - Provide a visual breakdown of the liquor category (by `Category Name`). Include volume sold in the breakdown.
+```{r}
+ggplot(data, aes(x=Longitude, y=Latitude)) + geom_point() + coord_fixed()
+
+#https://stackoverflow.com/questions/30510898/split-facet-plot-into-list-of-plots
+show10 <-
+  data %>% 
+  split(ceiling(group_indices(.,`Category Name`)/10)) %>% 
+  map(~ggplot(.,aes(x=`Category Name`, y=`Volume Sold (Liters)`))+geom_boxplot()+facet_wrap(~`Category Name`, ncol = 5, scales = "free"))
+for (index in seq(1, 13, 1)) {
+  print(show10[[index]])
+}
+```
+<br />
+4. Find the daily liquor sales in Ames in 2018. Summarize number of sales, volume of liquor sold and amount of money spent. Plot volume sold by day (use a scatterplot of volume by day and facet by month). Describe any patterns.
+Find the dates for ISU football home games in Fall 2018. Can you see a pattern? 
+```{r}
+sales2018 <- data %>% filter(Year == 2018)
+
+summary2018 <- sales2018 %>% summarise(`Number of Sales` = sum(`Bottles Sold`), `Volume of Liquor Sold (L)` = sum(`Volume Sold (Liters)`), `Amount of Money Spent ($)` = sum(`Sale (Dollars)`))
+
+plot1 <- ggplot(sales2018, aes(x=Day, y=`Volume Sold (Liters)`)) + geom_point() + facet_wrap(~Month)
+
+#ISU home games
+#9-1-18 (cancelled), 9-15-18, 9-22-18, 10-13-18, 10-27-18, 11-10-18, 11-24-18, 12-1-18
+#transform replaces unrecognized characters with "."
+sales2018 <- transform(sales2018, ISU.Home= ifelse((Month == 9 && Day == 15) || (Month == 9 && Day == 22) || (Month == 10 && Day == 13) || (Month == 10 && Day == 27) || (Month == 11 && Day == 10) || (Month == 11 && Day == 24) || (Month == 12 && Day == 1), TRUE, FALSE))
+#plot2 <- ggplot(sales2018, aes(x=Day, y=Volume.Sold..Liters.)) + geom_point(aes(color=ISU.Home)) + facet_wrap(~Month)
+
+summary2018
+plot1
+```
+<br />
+There appear to be evenly spaced inflection points ranging from 4-5 occurrences per month. Most alcohol is purchased at a specific time of the week, likely on weekend days. The scatter plot entirely lacks data for September and lacks data for all but the end of October. Data is not present for each day over the measured period, indicating either a lack of completness (unrecorded days) or numerous days in which no alcohol sales occurred.
+<br />
+To determine the correspondence of purchased alcohol volume with home ISU football games, I added a unique column (ISU.Home) containing boolean values to the sales2018 dataframe. All rows recieved "FALSE" labels, indicating there was no valid data on days in which a home ISU football game occurred. Data is missing for a majority of the football season and many days lack data.
+<br />
+<br />
+<br />
+Note: your submission is supposed to be fully reproducible, i.e. the TA and I will 'knit' your submission in RStudio. 
+
+
+For the submission: submit your solution in an R Markdown file and (just for insurance) submit the corresponding html (or Word) file with it. 
